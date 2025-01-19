@@ -18,8 +18,314 @@ to browse the changes between the tags.
 
 See docs/process.md for more on how version tagging works.
 
-3.1.57 (in development)
+4.0.1 (in development)
+----------------------
+- The system JS libraries in `src/` were renamed from `library_foo.js` to
+  `lib/libfoo.js`. They are still included via the same `-lfoo.js` flag so
+  this should not be a user-visible change. (#23348)
+- The minimum version of node required to run emscripten was bumped from v16.20
+  to v18.  Version 4.0 was mistakenly shipped with a change that required v20,
+  but that was reverted. (#23410)
+- `emscripten_webgl_create_context` now displays a warning message when there is
+  a conflict between the `majorVersion` requested and the WebGL support defined
+  via linker flags (`MIN_WEBGL_VERSION` and `MAX_WEBGL_VERSION`). This warning
+  will be turned into a hard failure in a future release. (#23372, #23416)
+
+4.0.0 - 01/14/25
+----------------
+- Emscripten version was bumped to 4.0.0. Happy new year, happy new major
+  version!  While version has a few interesting changes, there is nothing huge
+  that makes it different from any other release. (#19053)
+- `-sWASM_LEAGCY_EXCEPTIONS` option is added. (#23365) If true, it will emit
+  instructions for the legacy Wasm exception handling proposal
+  (https://github.com/WebAssembly/exception-handling/blob/main/proposals/exception-handling/legacy/Exceptions.md),
+  and if false, the new standardized exception handling proposal
+  (https://github.com/WebAssembly/exception-handling/blob/main/proposals/exception-handling/Exceptions.md).
+  This option defaults to true, given that major web browsers do not support the
+  new proposal by default yet. This option replaces the existing
+  `-sWASM_EXNREF`, whose meaning was the opposite.
+- compiler-rt, libcxx, libcxxabi, and libunwind were updated to LLVM 19.1.6.
+  (#22937, #22994, and #23294)
+- The default Safari version targeted by Emscripten has been raised from 14.1
+  to 15.0 (the `MIN_SAFARI_VERSION` setting) (#23312). This has several effects:
+  - The Wasm nontrapping-fptoint feature is enabled by default. Clang will
+    generate nontrapping (saturating) float-to-int conversion instructions for
+    C typecasts. This should have no effect on programs that do not have
+    undefined behavior but if the casted floating-point value is outside the range
+    of the target integer type, the result will be a number of the max or min value
+    instead of a trap. This also results in a small code size improvement because
+    of details of the LLVM IR semantics. This feature can be disabled in clang with
+    the `-mno-nontrapping-fptoint` flag. (#23007)
+  - The `WASM_BIGINT` feature is enabled by default. This has the effect that
+    Wasm i64 values are passed and returned between Wasm and JS as BigInt values
+    rather than being split by Binaryen into pairs of Numbers. (#22993)
+  - The `BULK_MEMORY` feature is enabled by default. `memory.copy` and
+    `memory.fill` instructions are used in the implementation of C `memcpy` and
+    `memset`, and Clang may generate them elsewhere (#22873). It can be
+    disabled with the `-mno-bulk-memory -mno-bulk-memory-opt` flags.
+- When using `-sMODULARIZE` we now assert if the factory function is called with
+  the JS `new` keyword.  e.g. `a = new Module()` rather than `b = Module()`.
+  This paves the way for marking the function as `async` which does not allow
+  `new` to be used.  This usage of `new` here was never documented and is
+  considered an antipattern. (#23210)
+- `PATH.basename()` no longer calls `PATH.normalize()`, so that
+  `PATH.basename("a/.")` returns `"."` instead of `"a"` and
+  `PATH.basename("a/b/..")` returns `".."` instead of `"a"`. This is in line with
+  the behaviour of both node and coreutils, and is already the case when using
+  NODERAWFS". (#23180)
+- The factory function exposed in `-sMODULARIZE` mode is now marked as `async`
+  when `WASM_ASYNC_COMPILATION` is enabled (the default). This allows us to use
+  `await` during module creation.  One side effect of this is that code in
+  `--post-js` files will now be delayed until after module creation and after
+  `main` runs.  This matches the existing behaviour when using sync instantation
+  (`-sWASM_ASYNC_COMPILATION=0`) but is an observable difference. (#23157)
+- The `POLYFILL_OLD_MATH_FUNCTIONS` setting was removed.  The browser versions
+  that require these polyfills are no longer supported by emscripten so the
+  polyfills should never be needed. (#23262)
+- JavaScript libraries can now be specified via `-lfoo.js`.  This works like the
+  existing `--js-library` flag but will search the library path (all paths
+  specified with `-L`) for `libfoo.js`. (#23338)
+- The `mallinfo` struct members are now defined as `size_t` which makes them
+  compatible with larger memories, and is also how linux defines them. (#23368)
+- Emscripten now uses the debug version of malloc (i.e. assertions enabled)
+  when linking in debug mode (`-O0` and/or `-sASSERTIONS`).  This means that
+  things like double-free will be detected in these builds.  Previously this was
+  only true with `-sASSERTIONS=2`. (#23330)
+- The code geneated in `--proxy-to-worker` no longer contains support for
+  reading the `?noProxy` URL parameter (this was not documented or tested).
+  (#23297)
+
+3.1.74 - 12/14/24
+-----------------
+- The file system was updated to independently track atime, mtime and ctime
+  instead of using the same time for all three. (#22998)
+- Emscripten-generated code will now use async/await internally when loading
+  the Wasm module.  This will be lowered away by babel when targeting older
+  browsers. (#23068)
+- Due to the discontinued support for invalid specializations of
+  `std::basic_string` (https://github.com/llvm/llvm-project/pull/72694), the
+  support for `std::basic_string<unsigned char>` was removed from embind.
+  (#23070)
+- The minimum supported versions of browser engines that we support were updated
+  to versions that support Promise, Fetch and Object.asign APIs, allowing the 
+  polyfills for these to be removed.  Chrome 32 -> 45, Firefox 34 -> 40, Safari
+  9.0 -> 10.1.  These browser engines version are all over 8 years old now.
+  (#23077, #23118)
+
+3.1.73 - 11/28/24
+-----------------
+- libunwind was updated to LLVM 19.1.4. (#22934)
+- mimalloc was updated to 2.1.7. (#21548)
+
+3.1.72 - 11/19/24
+-----------------
+- The `MEMORY64` setting is no longer experimental. At time of writing all
+  browsers still require a flag to run the resulting binaries but that should
+  change in the coming months since the proposal is now at stage 4. (#22864)
+- GLFW: Fixed regression introduced in 3.1.51. CSS scaling is now available
+  again. Note that CSS scaling is disabled in HiDPI mode. (#22847, #22900)
+
+3.1.71 - 11/04/24
+-----------------
+- SDL2 port updated to 2.30.9. (#22830)
+- LLVM's `-Wnontrivial-memaccess` warning has been updated to also warn about
+  passing non-trivially-copyable destination parameter to `memcpy`,
+  `memset` and similar functions for which it is a documented undefined
+  behavior (#22798). See https://github.com/llvm/llvm-project/pull/111434
+- The automatic fallback to `$HOME/.emscripten_cache` when the emscripten
+  directory is read-only was removed.  This automatic behaviour could cause
+  confusion.  Anyone who really wants to use `$HOME/.emscripten_cache` can
+  still do so either via an environment variable (`EMCC_CACHE`) or via a config
+  file setting `CACHE`.
+- The standalone `file_packager.py` tool now outputs modern JS (specifically it
+  includes nullish assignment).  If you use this output directly and you want
+  to support older browsers you may need to transpile it.  If you use
+  `file_packager` via emcc the output will be transpiled as part of the emcc
+  output. (#22805)
+
+3.1.70 - 10/25/24
+-----------------
+- Improvements to Audio Worklet support (#22731, #22681)
+- Small improvements to embind (#22734)
+  
+3.1.69 - 10/12/24
+-----------------
+- The usage of `EM_BOOL` in the emscripten API has been replaced with C/C++
+  bool.  This change should not be observable since `EM_BOOL` has been
+  equivalent to `bool` since #22157. (#22155)
+- Fix regression introduced in 3.1.67 (#22557) which broke webgpu / int64
+  integration. (#22689)
+- SDL2 port updated from 2.28.4 to 2.30.8. (#22697)
+- embind no longer exports any library functions by default.  Previously we
+  would export getInheritedInstanceCount, getLiveInheritedInstances,
+  flushPendingDeletes and setDelayFunction.  If you need these library function
+  exprted they can be added to `EXPORTED_RUNTIME_METHODS`. (#22705)
+
+3.1.68 - 09/30/24
+-----------------
+- Added support for compiling 256-bit wide AVX intrinsics, emulated on top
+  of 128-bit Wasm SIMD instruction set. (#22430). Pass `-msimd128 -mavx` to
+  enable targeting AVX.
+- Pthread-based programs no longer generates `.worker.js` file.  This file was
+  made redundant back in 3.1.58 and now is completely removed. (#22598)
+- The freetype port was updated from v2.6 to v2.13.3. (#22585)
+- The number of arguments passed to Embind function calls is now only verified
+  with ASSERTIONS enabled. (#22591)
+- Optional arguments can now be omitted from Embind function calls. (#22591)
+- Recent changes to Binaryen included in this version significantly improve
+  the speed at which the post-link optimizations run for some large programs.
+
+3.1.67 - 09/17/24
+-----------------
+- Add option `nonnull<ret_val>()` to Embind to omit `| null` from TS definitions
+  for functions that return pointers.
+
+3.1.66 - 09/10/24
+-----------------
+- The behaviour of the `pthread_kill` function was fixed to match the spec
+  and will now run the designated handler on the target thread. (#22467)
+- Added support for WebGL extensions EXT_clip_control, EXT_depth_clamp,
+  EXT_polygon_offset_clamp and WEBGL_polygon_mode (#20841)
+- New `emscripten_console_trace` and `emscripten_dbg_backtrace` APIs we were
+  added to `console.h`.  The former simply maps directly to `console.trace`.
+  The latter uses `dbg()` so it writes directly to stderr under node (better for
+  multi-threaded apps).
+
+3.1.65 - 08/22/24
+-----------------
+- A new `--emit-minification-map` command line flag was added, which can be used
+  to emit a minifiction map in the case that import/export minification is
+  performed (this happens at higher optimization levels). (#22428)
+- Remove `Module['quit']` handling.  This could be used to override the internal
+  method for shutting down the program, but it was neither documented nor
+  tested.  Programs that want to intercept the shutting down of a program can
+  use `Module['onExit']`. (#22371)
+- The `NODEJS_CATCH_EXIT` setting is now disabled by default.  This setting
+  is only useful under very specific circumstances, and has some downsides, so
+  disabling it by default makes sense. (#22257)
+- Add WebP (`.webp`) decoding support in file preloading. (#22282)
+
+3.1.64 - 07/22/24
 -----------------------
+- Updated the SCons tool to not require the `EMSCRIPTEN_ROOT` environment
+  variable, in which case it will assume that SCons will find the binaries in
+  (its) `PATH`.
+- Updated `emscons` to apply the `EMSCRIPTEN_ROOT`, `EMSCONS_PKG_CONFIG_LIBDIR`
+  and `EMSCONS_PKG_CONFIG_PATH` environment variables. The SCons tool will use
+  last two to set up `PKG_CONFIG_LIBDIR` and `PKG_CONFIG_PATH` respectively.
+
+3.1.63 - 07/12/24
+-----------------
+- Fix html5 input event bug that was introduced in 3.1.62. (#22201)
+- Fix webpack + pthreads bug that was introduced in 3.1.60. (#22165)
+
+3.1.62 - 07/02/24
+-----------------
+- The `EM_BOOL` type changed from `int/u32` to `bool/u8`.  This changes the
+  layout and size of some structs in the emscripten API. (#22157)
+- The `EMSCRIPTEN_FETCH_WAITABLE` flag along with the `emscripten_fetch_wait`
+  API were marked a deprecated.  These feature have not functions for several
+  years now. (#22138)
+- The internal `read_` function was removed.  We now just use `readBinary` or
+  `readAsync`. (#22080)
+- reference-types feature is now enabled by default in Emscripten, due to the
+  upstream LLVM change (https://github.com/llvm/llvm-project/pull/93261).
+- Emscripten now uses `strftime` from musl rather than using a custom
+  JavaScript implementation. (#21379)
+- Embind now supports return value policies for properties.
+
+3.1.61 - 05/31/24
+-----------------
+- The internal `readAsync` function now returns a promise rather than accepting
+  callback arguments.
+- The JSPI feature now uses the updated browser API for JSPI (available in
+  Chrome v126+). To support older versions of Chrome use Emscripten version
+  3.1.60 or earlier.
+- IDBFS mount has gained a new option { autoPersist: true }, which if passed,
+  changes the semantics of the IDBFS mount to automatically persist any changes
+  made to the filesystem. (#21938)
+
+3.1.60 - 05/20/24
+-----------------
+- Under nodefs, symbolic links to files outside of mount locations no longer work.
+  This reverts the previous behaviour added in #3277. (#21805)
+- The `EXPORTED_FUNCTIONS` list can now include JS library symbols even if they
+  have not been otherwise included (e.g. via `DEFAULT_LIBRARY_FUNCS_TO_INCLUDE`).
+  (#21867)
+- Due to the upstream LLVM changes
+  (https://github.com/llvm/llvm-project/pull/80923 and
+  https://github.com/llvm/llvm-project/pull/90792), multivalue feature is now
+  enabled by default in Emscripten. This only enables the language features and
+  does not turn on the multivalue ABI.
+- Embind now supports return value policies to better define object lifetimes.
+  See https://emscripten.org/docs/porting/connecting_cpp_and_javascript/embind.html#object-ownership for more information.
+
+3.1.59 - 04/30/24
+-----------------
+- Fix the location of the dummy `.worker.js` file that is now generated as part
+  of pthread builds so that is generated alongside the main JavaScript file.
+  See #21701. ()
+- `-sASYNCIFY=2` is setting now deprecated, use `-sJSPI` instead.
+
+3.1.58 - 04/23/24
+-----------------
+- The `-sMAIN_MODULE=1` mode no longer exports all the main module symbols on
+  `Module` object.  This saves a huge about of generated JS code due the fact
+  that `-sMAIN_MODULE=1` includes *all* native symbols in your program as well
+  is from the standard library.  The generated JS code for a simple program
+  in this mode is reduced from from 3.3mb to 0.5mb.  The current implementation
+  of this feature requires wasm-ld to be on the program twice which could have a
+  noticeable effect on link times. (#21785)
+- In `-sMODULARIZE` mode, the argument passed into the module constructor is
+  no longer mutated in place.  The expectation is that the module instance will
+  be available via the constructor return value.  Attempting to access methods
+  on the object passed *into* the constructor will now abort. (#21775)
+- Enable use of `::` to escape port option separator (#21710)
+- In multi-threaded builds `--extern-pre-js` and `--extern-post-js` code is
+  now only run on the main thread, and not on each of the workers. (#21750)
+- Fix crash when throwing exceptions in dynamically linked int64 functions (#21759)
+- Multi-threaded builds no depend on a separate `.worker.js` file.  This saves
+  on code size and network requests.  In order to make this change go smoothly,
+  without breaking build systems that expect a `worker.js`, emscripten will
+  generate an empty `.worker.js` to give folks time to transition their
+  deployment scripts.  In `-sSTRICT` mode, this empty file will not be
+  generated. (#21701)
+
+3.1.57 - 04/10/24
+-----------------
+- libcxx, libcxxabi, libunwind, and compiler-rt were updated to LLVM 18.1.2.
+  (#21607, #21638, and #21663)
+- musl libc updated from v1.2.4 to v1.2.5. (#21598)
+- In `MODULARIZE` mode we no longer export the module ready promise as `ready`.
+  This was previously exposed on the Module for historical reasons even though
+  in `MODULARIZE` mode the only way to get access to the module is to wait on
+  the promise returned from the factory function. (#21564)
+- JS library code is now executed in its own context/scope, which limits how
+  much of the compiler internals are accessible. If there are build time JS
+  symbols that you are depending on, but that were not added to this scope,
+  please file a bug and we can add more to this scope. (#21542)
+- The JS functions for manipulating the native/shadow stack
+  (`stackSave`/`stackRestore`/`stackAlloc`) are now just regular JS library
+  function and as such are only included if you explicitly depend on them.  If
+  you use these functions in your JS code you will need to depend on them via
+  either:
+  - The `EM_JS_DEPS` macro for `EM_ASM`/`EM_JS` code.
+  - The `__deps` attribute for JS library functions
+  - The `-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE` flag for `--pre-js`/`--post-js`
+    code
+  (#21555)
+- TypeScript definitions for Wasm exports, runtime exports, and embind bindings
+  can now be generated with `--emit-tsd`. The option `--embind-emit-tsd` has been
+  deprecated, use `--emit-tsd` instead.
+- Added the `ASYNCIFY_PROPAGATE_ADD` setting, to control whether the `ASYNCIFY_ADD`
+  list propagates or not. By default this is enabled; as a result you may see larger
+  ASYNCIFY builds as more of the function tree may be instrumented than you were
+  previously manually specifying in `ASYNCIFY_ADD`. To stop propagation you can
+  specify functions in the `ASYNCIFY_REMOVE` list, or to return to the previous
+  behaviour, disable this setting (set `-sNO_ASYNCIFY_PROPAGATE_ADD`.) (#21672)
+- ports changes:
+  - Fixed transitive link dependencies (#21602)
+  - Enable use of options in ports dependencies (#21629)
 
 3.1.56 - 03/14/24
 -----------------
@@ -1154,7 +1460,7 @@ See docs/process.md for more on how version tagging works.
   their own secondary sysroot may be able to simplify their build system by
   removing this completely and relying on the new default.
 - Reinstated the warning on linker-only `-s` settings passed when not linking
-  (i.e. when compiling with `-c`).  As before this can disabled with
+  (i.e. when compiling with `-c`).  As before this can be disabled with
   `-Wno-unused-command-line-argument` (#14182).
 - Standalone wasm mode no longer does extra binaryen work during link. It used
   to remove unneeded imports, in hopes of avoiding nonstandard imports that

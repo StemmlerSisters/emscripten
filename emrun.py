@@ -704,6 +704,8 @@ class HTTPHandler(SimpleHTTPRequestHandler):
         if not emrun_options.serve_after_exit:
           page_exit_code = int(data[6:])
           logv('Web page has quit with a call to exit() with return code ' + str(page_exit_code) + '. Shutting down web server. Pass --serve-after-exit to keep serving even after the page terminates with exit().')
+          # Set server socket to nonblocking on shutdown to avoid sporadic deadlocks
+          self.server.socket.setblocking(False)
           self.server.shutdown()
           return
       else:
@@ -815,7 +817,7 @@ def win_get_gpu_info():
         return gpu
     return None
 
-  for i in range(0, 16):
+  for i in range(16):
     try:
       hHardwareReg = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 'HARDWARE')
       hDeviceMapReg = winreg.OpenKey(hHardwareReg, 'DEVICEMAP')
@@ -1396,7 +1398,7 @@ def get_system_info(format_json):
       if len(gpus) == 1:
         info += 'GPU: ' + gpus[0]['model'] + ' with ' + str(gpus[0]['ram'] // 1024 // 1024) + " MB of VRAM\n"
       elif len(gpus) > 1:
-        for i in range(0, len(gpus)):
+        for i in range(len(gpus)):
           info += 'GPU' + str(i) + ": " + gpus[i]['model'] + ' with ' + str(gpus[i]['ram'] // 1024 // 1024) + ' MBs of VRAM\n'
       info += 'UUID: ' + unique_system_id
       return info.strip()
@@ -1425,7 +1427,6 @@ def list_processes_by_name(exe_full_path):
   except Exception:
     # Fail gracefully if psutil not available
     logv('import psutil failed, unable to detect browser processes')
-    pass
 
   logv('Searching for processes by full path name "' + exe_full_path + '".. found ' + str(len(pids)) + ' entries')
 
@@ -1568,18 +1569,28 @@ def parse_args(args):
   parser.add_argument('cmdlineparams', nargs='*')
 
   # Support legacy argument names with `_` in them (but don't
-  # advertize these in the --help message.
-  newargs = []
-  for a in args:
+  # advertize these in the --help message).
+  for i, a in enumerate(args):
+    if a == '--':
+      break
     if a.startswith('--') and '_' in a:
-      newargs.append(a.replace('_', '-'))
-    else:
-      newargs.append(a)
+      # Only replace '_' in that argument name, not that its value
+      parts = a.split('=')
+      parts[0] = parts[0].replace('_', '-')
+      args[i] = '='.join(parts)
 
-  return parser.parse_args(newargs)
+  return parser.parse_args(args)
 
 
-def run(args):
+def run(args):  # noqa: C901, PLR0912, PLR0915
+  """Future modifications should consider refactoring to reduce complexity.
+
+  * The McCabe cyclomatiic complexity is currently 74 vs 10 recommended.
+  * There are currently 86 branches vs 12 recommended.
+  * There are currently 202 statements vs 50 recommended.
+
+  To revalidate these numbers, run `ruff check --select=C901,PLR091`.
+  """
   global browser_process, browser_exe, processname_killed_atexit, emrun_options, emrun_not_enabled_nag_printed
 
   options = emrun_options = parse_args(args)
@@ -1625,7 +1636,7 @@ def run(args):
     file_to_serve = options.serve
   else:
     file_to_serve = '.'
-  file_to_serve_is_url = file_to_serve.startswith('file://') or file_to_serve.startswith('http://') or file_to_serve.startswith('https://')
+  file_to_serve_is_url = file_to_serve.startswith(('file://', 'http://', 'https://'))
 
   if options.serve_root:
     serve_dir = os.path.abspath(options.serve_root)
@@ -1633,7 +1644,7 @@ def run(args):
     if file_to_serve == '.' or file_to_serve_is_url:
       serve_dir = os.path.abspath('.')
     else:
-      if file_to_serve.endswith('/') or file_to_serve.endswith('\\') or os.path.isdir(file_to_serve):
+      if file_to_serve.endswith(('/', '\\')) or os.path.isdir(file_to_serve):
         serve_dir = file_to_serve
       else:
         serve_dir = os.path.dirname(os.path.abspath(file_to_serve))
@@ -1672,7 +1683,7 @@ def run(args):
         return 1
       elif options.browser == 'firefox':
         browser_app = 'org.mozilla.firefox/org.mozilla.gecko.BrowserApp'
-      elif options.browser == 'firefox_nightly' or options.browser == 'fenix':
+      elif options.browser in {'firefox_nightly', 'fenix'}:
         browser_app = 'org.mozilla.fenix/org.mozilla.gecko.BrowserApp'
       elif options.browser == 'chrome':
         browser_app = 'com.android.chrome/com.google.android.apps.chrome.Main'

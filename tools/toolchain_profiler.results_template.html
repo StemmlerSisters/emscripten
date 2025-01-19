@@ -75,7 +75,7 @@ if (location.search.indexOf('hideBlocksSmallerThan') != -1) {
 function refresh() {
   var hideBlocksSmallerThan = parseInt(document.getElementById('hideBlocksSmallerThan').value);
   var url = window.location.href;
-  if (url.includes('?') url = url.split('?')[0]
+  if (url.includes('?')) url = url.split('?')[0]
   window.location.href = url + '?hideBlocksSmallerThan=' + hideBlocksSmallerThan;
 }
 
@@ -631,7 +631,7 @@ function createSwimlaneChart(data) {
           .duration(500)
           .style("opacity", 0);
     }
-    // upate the item rects
+    // update the item rects
     var rects = itemRects.selectAll('rect')
       .data(visItems, function (d) { return d.id; })
       .attr('x', function(d) { return x1(d.start); })

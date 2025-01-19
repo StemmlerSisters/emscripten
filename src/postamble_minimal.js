@@ -54,14 +54,7 @@ function initRuntime(wasmExports) {
 #endif
 
 #if PTHREADS
-  if (ENVIRONMENT_IS_PTHREAD) {
-    // Export needed variables that worker.js needs to Module.
-    Module['HEAPU32'] = HEAPU32;
-    Module['__emscripten_thread_init'] = __emscripten_thread_init;
-    Module['__emscripten_thread_exit'] = __emscripten_thread_exit;
-    Module['_pthread_self'] = _pthread_self;
-    return;
-  }
+  if (ENVIRONMENT_IS_PTHREAD) return
 #endif
 
 #if WASM_WORKERS
@@ -89,6 +82,21 @@ function initRuntime(wasmExports) {
 
 // Initialize wasm (asynchronous)
 
+// In non-fastcomp non-asm.js builds, grab wasm exports to outer scope
+// for emscripten_get_exported_function() to be able to access them.
+#if LibraryManager.has('libexports.js')
+var wasmExports;
+#endif
+
+#if PTHREADS
+var wasmModule;
+#endif
+
+#if PTHREADS
+function loadModule() {
+  assignWasmImports();
+#endif
+
 var imports = {
 #if MINIFY_WASM_IMPORTED_MODULES
   'a': wasmImports,
@@ -98,18 +106,8 @@ var imports = {
 #endif // MINIFY_WASM_IMPORTED_MODULES
 };
 
-// In non-fastcomp non-asm.js builds, grab wasm exports to outer scope
-// for emscripten_get_exported_function() to be able to access them.
-#if LibraryManager.has('library_exports.js')
-var wasmExports;
-#endif
-
-#if PTHREADS
-var wasmModule;
-#endif
-
-#if DECLARE_ASM_MODULE_EXPORTS
-<<< WASM_MODULE_EXPORTS_DECLARES >>>
+#if SINGLE_FILE && WASM == 1 && !WASM2JS
+Module['wasm'] = base64Decode('<<< WASM_BINARY_DATA >>>');
 #endif
 
 #if MINIMAL_RUNTIME_STREAMING_WASM_INSTANTIATION
@@ -140,7 +138,7 @@ if (!Module['wasm']) throw 'Must load WebAssembly Module in to variable Module.w
 WebAssembly.instantiate(Module['wasm'], imports).then((output) => {
 #endif
 
-#if !LibraryManager.has('library_exports.js')
+#if !LibraryManager.has('libexports.js')
   // If not using the emscripten_get_exported_function() API, keep the
   // `wasmExports` variable in local scope to this instantiate function to save
   // code size.  (otherwise access it without to export it to outer scope)
@@ -185,7 +183,7 @@ WebAssembly.instantiate(Module['wasm'], imports).then((output) => {
 #if !DECLARE_ASM_MODULE_EXPORTS
   exportWasmSymbols(wasmExports);
 #else
-  <<< WASM_MODULE_EXPORTS >>>
+  assignWasmExports(wasmExports);
 #endif
 #if '$wasmTable' in addedLibraryItems
   wasmTable = wasmExports['__indirect_function_table'];
@@ -252,3 +250,13 @@ WebAssembly.instantiate(Module['wasm'], imports).then((output) => {
 }
 #endif // ASSERTIONS || WASM == 2
 );
+
+#if PTHREADS
+}
+
+if (!ENVIRONMENT_IS_PTHREAD) {
+  // When running in a pthread we delay module loading untill we have
+  // received the module via postMessage
+  loadModule();
+}
+#endif

@@ -15,7 +15,7 @@
 // That doesn't work for Chrome in turn, so need to resort to user agent
 // sniffing.. (sad :/)
 if (!performance.realNow) {
-  var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  var isSafari = typeof navigator !== 'undefined' && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   if (isSafari) {
     var realPerformance = performance;
     performance = {
@@ -593,7 +593,7 @@ var emscriptenCpuProfiler = {
   detectWebGLContext() {
     if (Module['canvas']?.GLctxObject?.GLctx) return Module['canvas'].GLctxObject.GLctx;
     else if (typeof GLctx != 'undefined') return GLctx;
-    else if (Module.ctx) return Module.ctx;
+    else if (Module['ctx']) return Module['ctx'];
     return null;
   },
 

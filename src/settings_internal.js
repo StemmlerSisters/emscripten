@@ -89,18 +89,21 @@ var USE_ASAN = false;
 // Whether embind has been enabled.
 var EMBIND = false;
 
+// Whether a TypeScript definition file has been requested.
+var EMIT_TSD = false;
+
+// This will be true during the generation of code in run_embind_gen. Helpful
+// for detecting if either TSD file or embind AOT JS generation is running.
+var EMBIND_GEN_MODE = false;
+
 // Whether the main() function reads the argc/argv parameters.
 var MAIN_READS_PARAMS = true;
 
-// Name of the file containing the Fetch *.fetch.js, if relevant
-var FETCH_WORKER_FILE = '';
-
 var WASI_MODULE_NAME = "wasi_snapshot_preview1";
 
-// List of JS libraries explicitly linked against.  This includes JS system
-// libraries (specified via -lfoo or -lfoo.js) in addition to user libraries
-// passed via `--js-library`.  It does not include implicitly linked libraries
-// added by the JS compiler.
+// List of JS libraries explicitly linked against.  This includes JS specified
+// on the command line via `-lfoo.js` / `--js-library`.  It does not include
+// implicitly linked libraries added by the JS compiler.
 var JS_LIBRARIES = [];
 
 // This will contain the emscripten version. This can be useful in combination
@@ -125,14 +128,11 @@ var EMIT_NAME_SECTION = false;
 // Whether we are emitting a symbol map.
 var EMIT_SYMBOL_MAP = false;
 
-// List of function explicitly exported by user on the command line.
-var USER_EXPORTED_FUNCTIONS = [];
+// List of symbols explicitly exported by user on the command line.
+var USER_EXPORTS = [];
 
 // name of the file containing wasm binary, if relevant
 var WASM_BINARY_FILE = '';
-
-// name of the file containing the pthread *.worker.js, if relevant
-var PTHREAD_WORKER_FILE = '';
 
 // name of the file containing the Wasm Worker *.ww.js, if relevant
 var WASM_WORKER_FILE = '';
@@ -143,7 +143,7 @@ var AUDIO_WORKLET_FILE = '';
 // Base URL the source mapfile, if relevant
 var SOURCE_MAP_BASE = '';
 
-// If set to 1, src/base64Utils.js will be included in the bundle.
+// If set to 1 then base64 decoding functions will be included in the bundle.
 // This is set internally when needed (SINGLE_FILE)
 var SUPPORT_BASE64_EMBEDDING = false;
 
@@ -169,11 +169,6 @@ var SUPPORTS_GLOBALTHIS = false;
 
 // Used to track whether target environment supports the 'Promise.any'.
 var SUPPORTS_PROMISE_ANY = false;
-
-// Wasm backend symbols that are considered system symbols and don't
-// have the normal C symbol name mangled applied (== prefix with an underscore)
-// (Also implicily on this list is any function that starts with string "dynCall_")
-var WASM_SYSTEM_EXPORTS = ['stackAlloc', 'stackSave', 'stackRestore', 'getTempRet0', 'setTempRet0'];
 
 // Internal: value of -flto argument (either full or thin)
 var LTO = 0;
@@ -202,9 +197,9 @@ var WASM_EXCEPTIONS = false;
 // EXPORTED_FUNCTIONS then this gets set to 0.
 var EXPECT_MAIN = true;
 
-// Provide and export a .ready() Promise. This is currently used by default with
-// MODULARIZE, and returned from the factory function.
-var EXPORT_READY_PROMISE = true;
+// Return a "ready" Promise from the MODULARIZE factory function.
+// We disable this under some circumstance if we know its not needed.
+var USE_READY_PROMISE = true;
 
 // If true, building against Emscripten's wasm heap memory profiler.
 var MEMORYPROFILER = false;
@@ -273,3 +268,7 @@ var WARN_DEPRECATED = true;
 // We currently set this to false for certain browser when large memory sizes
 // (2gb+ or 4gb+) are used
 var WEBGL_USE_GARBAGE_FREE_APIS = false;
+
+var INCLUDE_WEBGL1_FALLBACK = true;
+
+var MINIFICATION_MAP = '';

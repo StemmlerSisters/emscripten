@@ -376,9 +376,7 @@ def deref_if_nonpointer(m):
 
 
 def type_to_cdec(raw):
-  ret = type_to_c(raw.type.name, non_pointing=True)
-  if raw.getExtendedAttribute('Const'):
-    ret = 'const ' + ret
+  ret = type_to_c(full_typename(raw), non_pointing=True)
   if raw.type.name not in interfaces:
     return ret
   if raw.getExtendedAttribute('Ref'):
@@ -388,9 +386,18 @@ def type_to_cdec(raw):
   return ret + '*'
 
 
-def render_function(class_name, func_name, sigs, return_type, non_pointer,
+def render_function(class_name, func_name, sigs, return_type, non_pointer,  # noqa: C901, PLR0912, PLR0915
                     copy, operator, constructor, is_static, func_scope,
-                    call_content=None, const=False, array_attribute=False):
+                    call_content=None, const=False, array_attribute=False,
+                    bind_to=None):
+  """Future modifications should consider refactoring to reduce complexity.
+
+  * The McCabe cyclomatiic complexity is currently 67 vs 10 recommended.
+  * There are currently 79 branches vs 12 recommended.
+  * There are currently 195 statements vs 50 recommended.
+
+  To revalidate these numbers, run `ruff check --select=C901,PLR091`.
+  """
   legacy_mode = CHECKS not in ['ALL', 'FAST']
   all_checks = CHECKS == 'ALL'
 
@@ -455,10 +462,7 @@ def render_function(class_name, func_name, sigs, return_type, non_pointer,
     return (t.isArray() or t.isAny() or t.isString() or t.isObject() or t.isInterface())
 
   for i, (js_arg, arg) in enumerate(zip(args, all_args)):
-    if i >= min_args:
-      optional = True
-    else:
-      optional = False
+    optional = i >= min_args
     do_default = False
     # Filter out arguments we don't know how to parse. Fast casing only common cases.
     compatible_arg = isinstance(arg, Dummy) or (isinstance(arg, WebIDL.IDLArgument) and arg.optional is False)
@@ -536,7 +540,7 @@ def render_function(class_name, func_name, sigs, return_type, non_pointer,
         elif arg_type == 'Double':
           body += "  if (typeof {0} == 'object') {{ {0} = ensureFloat64({0}); }}\n".format(js_arg)
 
-  call_args = pre_arg
+  call_args = pre_arg.copy()
 
   for i, arg in enumerate(args):
     if options.wasm64 and is_ptr_arg(i):
@@ -603,9 +607,10 @@ def render_function(class_name, func_name, sigs, return_type, non_pointer,
     elif call_content is not None:
       call = call_content
     else:
-      call = func_name + '(' + call_args + ')'
+      if not bind_to:
+        bind_to = func_name
+      call = bind_to + '(' + call_args + ')'
       if is_static:
-
         call = c_class_name + '::' + call
       else:
         call = 'self->' + call
@@ -616,7 +621,10 @@ def render_function(class_name, func_name, sigs, return_type, non_pointer,
         # this function comes from an ancestor class; for operators, we must cast it
         cast_self = 'dynamic_cast<' + type_to_c(func_scope) + '>(' + cast_self + ')'
       maybe_deref = deref_if_nonpointer(raw[0])
-      if '=' in operator:
+      operator = operator.strip()
+      if operator in ["+", "-", "*", "/", "%", "^", "&", "|", "=",
+                      "<", ">", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<", ">>", ">>=",
+                      "<<=", "==", "!=", "<=", ">=", "<=>", "&&", "||"]:
         call = '(*%s %s %s%s)' % (cast_self, operator, maybe_deref, args[0])
       elif operator == '[]':
         call = '((*%s)[%s%s])' % (cast_self, maybe_deref, args[0])
@@ -631,7 +639,8 @@ def render_function(class_name, func_name, sigs, return_type, non_pointer,
     if non_pointer:
       return_prefix += '&'
     if copy:
-      pre += '  static %s temp;\n' % type_to_c(return_type, non_pointing=True)
+      # Avoid sharing this static temp var between threads, which could race.
+      pre += '  static thread_local %s temp;\n' % type_to_c(return_type, non_pointing=True)
       return_prefix += '(temp = '
       return_postfix += ', &temp)'
 
@@ -647,15 +656,16 @@ def render_function(class_name, func_name, sigs, return_type, non_pointer,
       if i == max_args:
         dec_args = ', '.join([type_to_cdec(raw[j]) + ' ' + args[j] for j in range(i)])
         js_call_args = ', '.join(['%s%s' % (('(ptrdiff_t)' if sig[j] in interfaces else '') + take_addr_if_nonpointer(raw[j]), args[j]) for j in range(i)])
+        em_asm_macro = 'EM_ASM_%s' % ('PTR' if c_return_type[-1] == '*' else 'INT' if c_return_type not in C_FLOATS else 'DOUBLE')
 
         js_impl_methods.append(r'''  %s %s(%s) %s {
-    %sEM_ASM_%s({
+    %s (%s) %s({
       var self = Module['getCache'](Module['%s'])[$0];
       if (!self.hasOwnProperty('%s')) throw 'a JSImplementation must implement all functions, you forgot %s::%s.';
       %sself['%s'](%s)%s;
     }, (ptrdiff_t)this%s);
   }''' % (c_return_type, func_name, dec_args, maybe_const,
-          basic_return, 'INT' if c_return_type not in C_FLOATS else 'DOUBLE',
+          basic_return, c_return_type, em_asm_macro,
           class_name,
           func_name, class_name, func_name,
           return_prefix,
@@ -688,10 +698,10 @@ for name, interface in interfaces.items():
     continue
   implements[name] = [js_impl[0]]
 
-# Compute the height in the inheritance tree of each node. Note that the order of interation
+# Compute the height in the inheritance tree of each node. Note that the order of iteration
 # of `implements` is irrelevant.
 #
-# After one iteration of the loop, all ancestors of child are guaranteed to have a a larger
+# After one iteration of the loop, all ancestors of child are guaranteed to have a larger
 # height number than the child, and this is recursively true for each ancestor. If the height
 # of child is later increased, all its ancestors will be readjusted at that time to maintain
 # that invariant. Further, the height of a node never decreases. Therefore, when the loop
@@ -768,7 +778,8 @@ for name in names:
                     constructor,
                     is_static=m.isStatic(),
                     func_scope=m.parentScope.identifier.name,
-                    const=m.getExtendedAttribute('Const'))
+                    const=m.getExtendedAttribute('Const'),
+                    bind_to=(m.getExtendedAttribute('BindTo') or [None])[0])
     mid_js += ['\n']
     if constructor:
       mid_js += build_constructor(name)
